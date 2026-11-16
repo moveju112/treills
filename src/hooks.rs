@@ -27,14 +27,14 @@ fn save(path:&Path,value:&Value)->Result<()>{
     fs::rename(tmp,path)?;
     Ok(())
 }
-fn hook_command(event:&str)->Result<String>{
+fn hook_command(event:&str,source:&str)->Result<String>{
     let exe=std::env::current_exe()?;
     let path=exe.to_str().context("binary path is not UTF-8")?;
     // Paths in POSIX single quotes: internal single quotes replaced with '\''
     let quoted=format!("'{}'",path.replace('\'',"'\\''"));
-    Ok(format!("{quoted} hook {event}"))
+    Ok(format!("TREILLS_SOURCE={source} {quoted} hook {event}"))
 }
-fn hooks_add(root:&mut Value)->Result<usize>{
+fn hooks_add(root:&mut Value,source:&str)->Result<usize>{
     if !root.is_object(){anyhow::bail!("settings root must be an object");}
     if root.get("hooks").is_none(){root["hooks"]=json!({});}
     let mut added=0;
@@ -43,7 +43,7 @@ fn hooks_add(root:&mut Value)->Result<usize>{
         let groups=root["hooks"][event].as_array_mut().context("unexpected hooks schema")?;
         let exists=groups.iter().any(|g|g.get("description").and_then(Value::as_str)==Some(MARKER));
         if exists{continue;}
-        groups.push(json!({"description":MARKER,"hooks":[{"type":"command","command":hook_command(event)?,"timeout":5}]}));
+        groups.push(json!({"description":MARKER,"hooks":[{"type":"command","command":hook_command(event,source)?,"timeout":5}]}));
         added+=1;
     }
     Ok(added)
@@ -66,7 +66,8 @@ pub fn install(with_codex:bool,dry:bool)->Result<()> {
     if with_codex {paths.push(home().join(".codex/hooks.json"));}
     for path in paths{
         let mut root=load(&path)?;
-        let n=hooks_add(&mut root)?;
+        let source=if path.to_string_lossy().contains(".codex/"){"codex"}else{"claude"};
+        let n=hooks_add(&mut root,source)?;
         if dry {println!("would add {n} hook groups in {}",path.display());}
         else if n>0 {save(&path,&root)?;println!("installed {n} hook groups in {}",path.display());}
         else {println!("already installed: {}",path.display());}
@@ -94,6 +95,7 @@ pub fn emit(event:&str)->Result<()> {
     let mut row=json!({
         "source": std::env::var("TREILLS_SOURCE").unwrap_or_else(|_|"claude".into()),
         "event":event,
+        "ts_unix":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
         "session_id":text(&v,"session_id").unwrap_or_else(||std::env::var("HARNESS_SESSION_ID").unwrap_or_else(|_|"unknown".into())),
     });
     for key in ["cwd","tool_name","agent_id","agent_type","skill_name","model"] {
@@ -122,9 +124,9 @@ mod tests{
     #[test]
     fn hook_merge_idempotent_and_removable(){
         let mut d=json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo keep"}]}]}});
-        let n=hooks_add(&mut d).unwrap();
+        let n=hooks_add(&mut d,"claude").unwrap();
         assert_eq!(n,EVENTS.len());
-        assert_eq!(hooks_add(&mut d).unwrap(),0);
+        assert_eq!(hooks_add(&mut d,"claude").unwrap(),0);
         assert_eq!(hooks_remove(&mut d),n);
         assert_eq!(d["hooks"]["Stop"].as_array().unwrap().len(),1);
     }
