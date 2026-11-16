@@ -208,7 +208,7 @@ pub fn projects(db:&Connection,filter:Option<&str>,search:Option<&str>,offset:i6
     let count=found.len();
     let start=offset.max(0) as usize;
     let items=found.into_iter().skip(start).take(limit as usize).collect();
-    let next_offset=(start+limit as usize<count).then_some(offset.max(0)+limit);
+    let next_offset=(start+(limit as usize)<count).then_some(offset.max(0)+limit);
     let mut stmt=db.prepare("SELECT path,message,recorded_at FROM issues ORDER BY recorded_at DESC LIMIT 15")?;
     let issues=stmt.query_map([],|r|Ok(IngestIssue{path:r.get(0)?,message:r.get(1)?,recorded_at:r.get(2)?}))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
