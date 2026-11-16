@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod integration_tests;
 mod collector;
 mod domain;
 mod server;
