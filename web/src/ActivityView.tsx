@@ -45,6 +45,8 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [executions, setExecutions] = useState<Workflow[]>([]);
+  const [projectExecutions, setProjectExecutions] = useState<Workflow[]>([]);
+  const [moreProjectExecutions,setMoreProjectExecutions] = useState<number|null>(null);
   const [detail, setDetail] = useState<WorkflowDetail|null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [eventCursor, setEventCursor] = useState<number|null>(0);
@@ -111,6 +113,10 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
           const res=await provider.listSessions({projectId:scopeId,limit:PAGE},controller.signal);
           if(controller.signal.aborted)return;
           setSessions(res.items);setNext(res.next_offset);
+          const projectTurns=await provider.listWorkflows({projectId:scopeId,limit:40},controller.signal);
+          if(controller.signal.aborted)return;
+          setProjectExecutions(projectTurns.items);
+          setMoreProjectExecutions(projectTurns.next_offset);
         }else if(scopeKind==='session'){
           const res=await provider.listWorkflows({sessionId:scopeId,search,limit:PAGE},controller.signal);
           if(controller.signal.aborted)return;
@@ -153,6 +159,14 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
         const res=await provider.listWorkflows({sessionId:scopeId,search,offset:next,limit:PAGE});
         setExecutions(old=>[...old,...res.items]);setNext(res.next_offset);
       }
+    }catch(e){setError(String(e));}
+  };
+  const moreProjectTurns=async()=>{
+    if(scopeKind!=='project'||moreProjectExecutions===null)return;
+    try{
+      const page=await provider.listWorkflows({projectId:scopeId,offset:moreProjectExecutions,limit:40});
+      setProjectExecutions(old=>[...old,...page.items]);
+      setMoreProjectExecutions(page.next_offset);
     }catch(e){setError(String(e));}
   };
   const moreEvents=async()=>{
@@ -211,6 +225,21 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
       </button>)}
       {!error&&sessions.length===0&&<p className={styles.empty}>이 프로젝트에 수집된 세션이 없습니다.</p>}
     </div>}
+    {scopeKind==='project'&&<section className={styles.projectTurns} aria-label="프로젝트 실행 목록">
+      <h3>실행 기록 / turns</h3>
+      <p className={styles.muted}>각 실행은 원래 세션과 연결된 상태로 표시됩니다.</p>
+      <div className={styles.scopeGrid}>
+        {projectExecutions.map(x=><button type="button" key={x.id} className={styles.projectCard}
+            onClick={()=>move({kind:'execution',id:x.id,sessionId:x.session_id,projectId:x.project_id})}>
+          <span className={styles.projectTop}><strong>{x.name}</strong><ScopeBadge state={x.state}/></span>
+          <small>session: {x.session_id} · turn: {x.turn_id}</small>
+          <small>최근: {stamp(x.latest_at)} · {x.node_count} nodes</small>
+          {x.incomplete&&<small className={styles.warning}>기록 불완전</small>}
+        </button>)}
+        {!error&&projectExecutions.length===0&&<p className={styles.empty}>확인된 실행/turn이 없습니다.</p>}
+      </div>
+      {moreProjectExecutions!==null&&<button type="button" className={styles.more} onClick={()=>void moreProjectTurns()}>이전 실행 더 보기</button>}
+    </section>}
     {scopeKind==='session'&&<div className={styles.scopeGrid}>
       {executions.map(x=><button type="button" key={x.id} className={styles.projectCard}
          onClick={()=>move({kind:'execution',id:x.id,sessionId:x.session_id,projectId:x.project_id})}>
