@@ -115,7 +115,7 @@ fn evidence(raw:Option<String>,id:&str)->String{
 }
 fn state(event:&str,v:&Value,time:Option<i64>)->RunState{
     // Ended is not success. A tool call is not evidence of passing validation.
-    if ["SessionEnd","session_end","SubagentStop"].contains(&event){return RunState::Ended;}
+    if ["SessionEnd","session_end"].contains(&event){return RunState::Ended;}
     if ["Stop","Notification","permission_requested"].contains(&event){return RunState::Waiting;}
     if ["turn_cancelled","cancelled"].contains(&event){return RunState::Cancelled;}
     if ["turn_failed","failure"].contains(&event){return RunState::Failed;}
