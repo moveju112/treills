@@ -19,9 +19,6 @@ export interface ActivityViewProps {
   onNodeSelect?: (id: string | null) => void;
 }
 const PAGE = 30;
-const attention = new Set(['waiting','failed','unknown']);
-const active = new Set(['running','recent']);
-const completed = new Set(['ended','success','failed','cancelled']);
 
 function ScopeBadge({ state }: {state: Workflow['state']}) {
   return <span className={styles.badge} data-status={state}><span aria-hidden="true">●</span> {stateText[state]}</span>;
