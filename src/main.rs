@@ -30,7 +30,7 @@ fn run_tmux(cli:&str)->Result<()>{
     if cli!="claude" && cli!="codex"{bail!("expected --cli claude or codex");}
     let exe=std::env::current_exe()?;
     let name=format!("treills-{}",std::process::id());
-    let command=format!("{} monitor",format!("'{}'",exe.to_string_lossy().replace('\'',"'\\''")));
+    let command=format!("'{}' monitor",exe.to_string_lossy().replace('\'',"'\\''"));
     let status=Command::new("tmux")
         .args(["new-session","-d","-s",&name,cli])
         .status()?;
