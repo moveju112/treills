@@ -134,6 +134,18 @@ fn state(event:&str,v:&Value,time:Option<i64>)->RunState{
         None=>RunState::Unknown
     }
 }
+fn session_state(event:&str,v:&Value,time:Option<i64>)->RunState{
+    if event=="SessionEnd" || event=="session_end" {return RunState::Ended;}
+    if let Some(explicit)=lookup(v,&["/session_status","/payload/session_status"]){
+        return state("",&serde_json::json!({"execution_status":explicit}),time);
+    }
+    if event=="Stop" || event=="Notification" {return RunState::Waiting;}
+    match time {
+        Some(t) if store::now()-t<120=>RunState::Recent,
+        Some(_)=>RunState::Inactive,
+        None=>RunState::Unknown
+    }
+}
 fn merge_state(previous:&str,latest:RunState,previous_at:Option<i64>,at:Option<i64>)->String{
     let p=RunState::from_db(previous);
     if p.is_terminal()&&!latest.is_terminal(){return previous.into();}
@@ -171,7 +183,7 @@ fn upsert_session(db:&Connection,source:&str,native:&str,v:&Value,event_id:&str,
     let ev=lookup(v,&["/event","/payload/type"]).unwrap_or_default();
     let prior=existing.as_ref().map(|x|x.0.as_str()).unwrap_or("unknown");
     let previous_at=existing.as_ref().and_then(|x|x.1);
-    let new_state=merge_state(prior,state(ev,v,time),previous_at,time);
+    let new_state=merge_state(prior,session_state(ev,v,time),previous_at,time);
     let parent_turn=lookup(v,&["/parent_turn_id","/payload/parent_turn_id"]).map(|native_turn|{
         if let Some(parent_session)=lookup(v,&["/parent_session_id","/payload/parent_session_id"]){
             turn_id(source,&session_id(source,parent_session),native_turn)
@@ -255,8 +267,8 @@ fn event(db:&Connection,id:&str,wf:Option<&str>,sid:&str,turn:Option<&str>,node:
     Ok(())
 }
 fn call(db:&Connection,wf:&str,node:&str,id:&str,tool:&str,time:Option<i64>,done:bool,result:Option<&str>)->Result<bool>{
-    let previous=db.query_row("SELECT name FROM calls WHERE workflow_id=?1 AND node_id=?2 AND call_id=?3",
-       params![wf,node,id],|r|r.get::<_,String>(0)).optional()?;
+    let previous=db.query_row("SELECT name,finished_at FROM calls WHERE workflow_id=?1 AND node_id=?2 AND call_id=?3",
+       params![wf,node,id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<i64>>(1)?))).optional()?;
     db.execute("INSERT INTO calls(workflow_id,node_id,call_id,name,started_at,finished_at,result)
        VALUES(?1,?2,?3,?4,?5,?6,?7)
        ON CONFLICT(workflow_id,node_id,call_id) DO UPDATE SET
@@ -265,7 +277,7 @@ fn call(db:&Connection,wf:&str,node:&str,id:&str,tool:&str,time:Option<i64>,done
        finished_at=COALESCE(excluded.finished_at,calls.finished_at),
        result=COALESCE(excluded.result,calls.result)",
        params![wf,node,id,tool,if done{None}else{time},if done{time}else{None},result])?;
-    Ok(previous.is_none())
+    Ok(if done{previous.as_ref().and_then(|x|x.1).is_none()}else{previous.is_none()})
 }
 fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
     current_turn:&mut Option<String>,v:&Value)->Result<()> {
@@ -336,9 +348,10 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
             }else if kind=="tool_result" {
                 if let Some(call_id)=lookup(part,&["/tool_use_id"]){
                     let result=if part.get("is_error").and_then(Value::as_bool)==Some(true){"failed"}else{"returned"};
-                    let _=call(db,&wf,&node,call_id,"",time,true,Some(result))?;
-                    event(db,&format!("{evidence_id}:result:{index}"),Some(&wf),&sid,Some(&native_turn),
-                      &node,time,"tool_end",result,source_label,Some(call_id))?;
+                    if call(db,&wf,&node,call_id,"",time,true,Some(result))? {
+                        event(db,&format!("{evidence_id}:result:{index}"),Some(&wf),&sid,Some(&native_turn),
+                          &node,time,"tool_end",result,source_label,Some(call_id))?;
+                    }
                 }
             }
         }
@@ -347,7 +360,7 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
         let call_id=lookup(v,&["/tool_use_id","/tool_call_id","/payload/tool_use_id"]);
         let done=event_name.to_lowercase().contains("post")||event_name.ends_with("End");
         let fresh=if let Some(id)=call_id {call(db,&wf,&node,id,tool,time,done,None)?}else{true};
-        if fresh||done{
+        if fresh{
             event(db,&format!("{evidence_id}:hook"),Some(&wf),&sid,Some(&native_turn),&node,
                 time,if done{"tool_end"}else{"tool_start"},tool,"hook",call_id)?;
         }
@@ -370,9 +383,10 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
             }
             "function_call_output" => {
                 if let Some(call_id)=lookup(p,&["/call_id"]){
-                    let _=call(db,&wf,&node,call_id,"",time,true,None)?;
-                    event(db,&format!("{evidence_id}:codex_tool_end"),Some(&wf),&sid,Some(&native_turn),
-                        &node,time,"tool_end","returned","codex",Some(call_id))?;
+                    if call(db,&wf,&node,call_id,"",time,true,None)? {
+                        event(db,&format!("{evidence_id}:codex_tool_end"),Some(&wf),&sid,Some(&native_turn),
+                            &node,time,"tool_end","returned","codex",Some(call_id))?;
+                    }
                 }
             }
             "task_complete" => {
@@ -396,6 +410,16 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
         params![wf,pid,store::now()])?;
     Ok(())
 }
+fn flag_incomplete(db:&Connection,file:&Path,source:&str)->Result<()> {
+    if source=="hook"{return Ok(());}
+    if let Some(native)=native_session(file,source,&Value::Null){
+        let sid=session_id(source,&native);
+        db.execute("UPDATE sessions SET incomplete=1 WHERE id=?1",[&sid])?;
+        db.execute("UPDATE workflows SET incomplete=1 WHERE session_id=?1",[&sid])?;
+    }
+    Ok(())
+}
+
 fn scan_file(db:&mut Connection,file:&Path,source:&str,report:&mut Report)->Result<()> {
     let path=file.to_string_lossy().into_owned();
     let identity=identity(file)?;
@@ -410,6 +434,7 @@ fn scan_file(db:&mut Connection,file:&Path,source:&str,report:&mut Report)->Resu
     if let Some((old_id,old_prefix,_,_,_))=previous.as_ref(){
         if old_id!=&identity || old_prefix!=&prefix || size<offset {
             generation+=1;offset=0;turn=None;
+            flag_incomplete(db,file,source)?;
             store::issue(db,&path,"Source replaced or truncated; prior history retained, new generation started")?;
             report.issues+=1;
         }
@@ -442,6 +467,7 @@ fn scan_file(db:&mut Connection,file:&Path,source:&str,report:&mut Report)->Resu
        params![path,identity,prefix,end as i64,generation,turn,if invalid>0{1}else{0}])?;
     if invalid>0{
         store::issue(&tx,&path,&format!("{invalid} corrupted JSONL lines skipped"))?;
+        flag_incomplete(&tx,file,source)?;
         report.issues+=1;
     }
     tx.commit()?;
