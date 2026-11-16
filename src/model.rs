@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Legacy TUI session reducer retained for compatibility tests.
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
