@@ -91,8 +91,8 @@ test('all → project → session → turn preserves execution ID, connections a
   await expect.poll(async () => viewport.getAttribute('style')).not.toBe(original);
   await page.getByRole('button', { name: '화면 맞춤' }).click();
   await expect(page.locator('section[aria-label="노드 상세"]')).toContainText('reviewer');
-  expect(requests.some(q => q.includes('project_id=' + alpha))).toBe(true);
-  expect(requests.some(q => q.includes('session_id=' + session))).toBe(true);
+  expect(requests.some(q => decodeURIComponent(q).includes('project_id=' + alpha))).toBe(true);
+  expect(requests.some(q => decodeURIComponent(q).includes('session_id=' + session))).toBe(true);
 });
 test('mobile graph pan/zoom stays inside viewport', async ({ page }) => {
   const requests: string[] = [];
