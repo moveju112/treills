@@ -41,12 +41,6 @@ pub fn scan_checked() -> Result<Vec<Session>> {
     }
     Ok(result)
 }
-pub fn scan() -> Vec<Session> {
-    match scan_checked(){
-        Ok(s)=>s,
-        Err(err)=>{eprintln!("treills: failed to collect sessions: {err:#}");Vec::new()}
-    }
-}
 pub fn read_events(follow:bool)->Result<()> {
     let path=event_file();
     if !path.exists(){anyhow::bail!("no events yet: {}",path.display());}
