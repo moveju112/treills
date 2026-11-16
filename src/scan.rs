@@ -69,7 +69,7 @@ pub fn scan() -> Vec<Session> {
         });
     }
     let mut out:Vec<_>=sessions.into_values().collect();
-    out.sort_by(|a,b|b.last_epoch.cmp(&a.last_epoch));
+    out.sort_by_key(|a| std::cmp::Reverse(a.last_epoch));
     out.truncate(100);
     out
 }
