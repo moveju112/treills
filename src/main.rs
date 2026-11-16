@@ -26,7 +26,7 @@ fn usage(){
 fn doctor(){
     println!("Treills {}",env!("CARGO_PKG_VERSION"));
     println!("event log: {}",scan::event_file().display());
-    println!("sessions discovered: {}",scan::scan().len());
+    match scan::scan_checked(){Ok(s)=>println!("sessions discovered: {}",s.len()),Err(e)=>eprintln!("session scan failed: {e:#}")}
     for bin in ["claude","codex","tmux"] {
         let ok=Command::new("sh").arg("-c").arg(format!("command -v {bin} >/dev/null")).status()
             .map(|s|s.success()).unwrap_or(false);
@@ -70,7 +70,7 @@ fn main()->Result<()>{
             Ok(())
         },
         "sessions"=>{
-            for s in scan::scan(){println!("{}\t{}\t{}\t{}\t{}",s.source,s.id,s.model,s.phase,s.cwd);}
+            for s in scan::scan_checked()?{println!("{}\t{}\t{}\t{}\t{}",s.source,s.id,s.model,s.phase,s.cwd);}
             Ok(())
         }
         "events"=>scan::read_events(args.iter().any(|s|s=="--follow"||s=="-f")),
