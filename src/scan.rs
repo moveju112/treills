@@ -41,7 +41,7 @@ pub fn scan() -> Vec<Session> {
         ("codex",home().join(".codex/sessions"))
     ] {
         if !root.exists(){continue;}
-        for entry in WalkDir::new(root).max_depth(7).into_iter().filter_map(Result::ok) {
+        for entry in WalkDir::new(root).max_depth(7).into_iter().filter_map(|e| e.ok()) {
             if !entry.file_type().is_file() || entry.path().extension().and_then(|v|v.to_str())!=Some("jsonl") {continue;}
             let path=entry.path();
             let name=session_id(path);
