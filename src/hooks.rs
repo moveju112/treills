@@ -85,7 +85,8 @@ pub fn uninstall()->Result<()> {
     Ok(())
 }
 fn text(v:&Value,key:&str)->Option<String>{
-    v.get(key).and_then(Value::as_str).map(ToOwned::to_owned)
+    v.get(key).or_else(||v.get("payload").and_then(|p|p.get(key)))
+        .and_then(Value::as_str).map(ToOwned::to_owned)
 }
 pub fn emit(event:&str)->Result<()> {
     if !EVENTS.contains(&event){anyhow::bail!("invalid hook event");}
@@ -98,7 +99,9 @@ pub fn emit(event:&str)->Result<()> {
         "ts_unix":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
         "session_id":text(&v,"session_id").unwrap_or_else(||std::env::var("HARNESS_SESSION_ID").unwrap_or_else(|_|"unknown".into())),
     });
-    for key in ["cwd","tool_name","agent_id","agent_type","skill_name","model"] {
+    for key in ["cwd","tool_name","tool_use_id","tool_call_id","agent_id","agent_type",
+        "parent_agent_id","child_session_id","parent_session_id","parent_turn_id","turn_id",
+        "skill_name","task_name","workflow_name","model","event_id","timestamp"] {
         if let Some(value)=text(&v,key){row[key]=json!(value);}
     }
     // Never persist prompts, tool arguments, tool outputs, or transcript content.
@@ -121,6 +124,14 @@ pub fn emit(event:&str)->Result<()> {
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn nested_hook_metadata_is_read_without_body_fields(){
+        let v=json!({"payload":{"session_id":"session-1","turn_id":"turn-1",
+          "tool_name":"Read","cwd":"/repo/project","tool_input":{"secret":"DO_NOT_STORE"}}});
+        assert_eq!(text(&v,"session_id").as_deref(),Some("session-1"));
+        assert_eq!(text(&v,"turn_id").as_deref(),Some("turn-1"));
+        assert!(text(&v,"tool_input").is_none());
+    }
     #[test]
     fn hook_merge_idempotent_and_removable(){
         let mut d=json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo keep"}]}]}});
