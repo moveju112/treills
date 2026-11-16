@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@xyflow/react": "^12.8.0",
@@ -23,6 +24,7 @@
     "typescript": "~5.8.3",
     "vite": "^6.2.0",
     "vitest": "^3.2.0",
-    "@types/dagre": "^0.7.53"
+    "@types/dagre": "^0.7.53",
+    "@playwright/test": "^1.56.0"
   }
 }
