@@ -13,10 +13,10 @@ pub fn open_at(path: &std::path::Path) -> Result<Connection> {
             fs::set_permissions(p, fs::Permissions::from_mode(0o700))?;
         }
     }
-    let db = Connection::open(&path).context("open Treills SQLite database")?;
+    let db = Connection::open(path).context("open Treills SQLite database")?;
     #[cfg(unix)] {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     }
     db.pragma_update(None, "journal_mode", "WAL")?;
     db.busy_timeout(std::time::Duration::from_secs(3))?;
@@ -155,6 +155,7 @@ pub fn workflow(db:&Connection,id:&str)->Result<Option<WorkflowDetail>>{
     let events=events_query(db,id,None,100)?.items;
     Ok(Some(WorkflowDetail{api_version:API_VERSION.into(),workflow,nodes,edges,events}))
 }
+#[allow(clippy::too_many_arguments)]
 pub fn workflows(db:&Connection, project_id:Option<&str>,session_id:Option<&str>,turn_id:Option<&str>,status:Option<&str>,search:Option<&str>,offset:i64,limit:i64)->Result<WorkflowsPage>{
     let limit=limit.clamp(1,100);
     let sql=format!("SELECT {WF_COLUMNS} FROM workflows w
@@ -246,10 +247,6 @@ pub fn issue(db:&Connection,path:&str,msg:&str)->Result<()>{
     db.execute("INSERT INTO issues(path,message,recorded_at) VALUES (?1,?2,?3)
       ON CONFLICT(path) DO UPDATE SET message=excluded.message,recorded_at=excluded.recorded_at",
       params![path,msg,now()])?;
-    Ok(())
-}
-pub fn clear_issue(db:&Connection,path:&str)->Result<()> {
-    db.execute("DELETE FROM issues WHERE path=?1",[path])?;
     Ok(())
 }
 #[cfg(test)]
