@@ -4,8 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::{fs, path::PathBuf};
 
 pub fn db_path() -> PathBuf { crate::scan::state_dir().join("history.sqlite3") }
-pub fn open() -> Result<Connection> {
-    let path = db_path();
+pub fn open() -> Result<Connection> { open_at(&db_path()) }
+pub fn open_at(path: &std::path::Path) -> Result<Connection> {
     if let Some(p) = path.parent() {
         fs::create_dir_all(p)?;
         #[cfg(unix)] {
