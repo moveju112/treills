@@ -60,7 +60,7 @@ pub fn monitor()->Result<()> {
                         KeyCode::Char('q')|KeyCode::Esc=>break,
                         KeyCode::Down=>{if selected+1<sessions.len(){selected+=1;}},
                         KeyCode::Up=>{selected=selected.saturating_sub(1);},
-                        KeyCode::Char('r')=>sessions=scan::scan(),
+                        KeyCode::Char('r')=>{},
                         _=>{}
                     }
                 }
