@@ -146,3 +146,53 @@ fn worktree_shares_project_identity_but_retains_worktree_path(){
     let root:String=db.query_row("SELECT root FROM projects WHERE id=?1",[wf.project_id],|r|r.get(0)).unwrap();
     assert_eq!(root,main.to_string_lossy());
 }
+
+#[test]
+fn http_api_filters_before_delivery_and_preserves_execution_identity() {
+    use axum::{body::{Body,to_bytes},http::{Request,StatusCode}};
+    use tower::ServiceExt;
+    let setup=Setup::new();
+    let mut db=setup.db();
+    collector::refresh(&mut db,&setup.sources).unwrap();
+    let all=store::projects(&db,None,None,0,20).unwrap().items;
+    let pid=all.iter().find(|p|p.root==setup.alpha).unwrap().id.clone();
+    let target=id(&db,"turn-a1");
+    drop(db);
+    let assets=setup.dir.path().join("assets");
+    fs::create_dir_all(&assets).unwrap();
+    fs::write(assets.join("index.html"),"ok").unwrap();
+    let app=crate::server::app(setup.dir.path().join("history.sqlite"),&assets);
+    let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let get=|uri:&str| {
+        let app=app.clone();
+        runtime.block_on(async {
+            let response=app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+            let status=response.status();
+            let body=to_bytes(response.into_body(),4*1024*1024).await.unwrap();
+            (status,serde_json::from_slice::<serde_json::Value>(&body).unwrap())
+        })
+    };
+    let (status,projects)=get("/api/v1/projects?limit=20");
+    assert_eq!(status,StatusCode::OK);
+    assert_eq!(projects["items"].as_array().unwrap().len(),2);
+    let (status,sessions)=get(&format!("/api/v1/sessions?project_id={pid}"));
+    assert_eq!(status,StatusCode::OK);
+    assert!(sessions["items"].as_array().unwrap().len()>=2);
+    let (status,turns)=get("/api/v1/workflows?session_id=s:claude:sess-a");
+    assert_eq!(status,StatusCode::OK);
+    assert_eq!(turns["items"].as_array().unwrap().len(),2);
+    let (status,turn)=get("/api/v1/workflows?session_id=s:claude:sess-a&turn_id=turn-a1");
+    assert_eq!(status,StatusCode::OK);
+    let items=turn["items"].as_array().unwrap();
+    assert_eq!(items.len(),1);
+    assert_eq!(items[0]["id"],target);
+    let (status,detail)=get(&format!("/api/v1/workflows/{target}"));
+    assert_eq!(status,StatusCode::OK);
+    assert_eq!(detail["workflow"]["id"],items[0]["id"]);
+    assert_eq!(detail["edges"].as_array().unwrap().len(),2);
+    let (status,events)=get("/api/v1/sessions/s:claude:sess-a/events?cursor=0");
+    assert_eq!(status,StatusCode::OK);
+    assert!(events["items"].as_array().unwrap().len()>2);
+    let (status,_)=get("/api/v1/changes?after=invalid");
+    assert_eq!(status,StatusCode::BAD_REQUEST);
+}
