@@ -59,3 +59,33 @@ Support: Linux and macOS terminals (Windows may need a POSIX environment and tmu
 ## Credits
 
 UI/workflow inspiration: [yarg119/trellis](https://github.com/yarg119/trellis). This is a new Rust implementation; refer to the original project for its own feature set and terms.
+
+
+## Web execution graph (separate from TUI)
+
+This branch adds an Axum/SQLite API and React/TypeScript graph UI. Nothing starts a web server or changes CLI hooks unless you explicitly execute a command.
+
+```bash
+cargo build --release
+cargo run -- typegen
+cd web
+npm install
+npm run build
+cd ..
+./target/release/treills serve
+```
+
+The server defaults to `http://127.0.0.1:47821`. From another machine use:
+
+```bash
+ssh -L 47821:127.0.0.1:47821 user@server
+# Open http://127.0.0.1:47821 in your local browser.
+```
+
+Use `treills monitor` for the original SSH TUI. The web collector imports existing Claude Code and Codex JSONL sessions without installing hooks; optional metadata-only hook installation is **separate** via `treills install --dry-run` and `treills install --with-codex`.
+
+The SQLite history is under `~/.local/state/treills/history.sqlite3`. Original CLI transcripts are read-only. Sessions and individual turns have different stable IDs and can be queried at project, session or execution scope. Missing timestamps/parent links remain unknown; session termination never implies success.
+
+Rust test fixtures cover two projects, multiple sessions and turns, nested delegation, success/failure/cancellation, worktree identity, idempotent re-read, truncation, persistence and prompt privacy.
+
+The Rust/React interface and future Grove adapter contract are documented in [docs/GROVE_INTEGRATION.md](docs/GROVE_INTEGRATION.md). The original TUI is retained; the standalone web screen is an extension, not the original Python Trellis's full advisor/Jev/embedded-PTY feature set.
