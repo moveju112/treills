@@ -141,7 +141,7 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
     };
     void load();
     return ()=>{valid=false;};
-  },[provider,scopeKind,scopeId,selectNode]);
+  },[provider,scopeKind,scopeId]);
 
   const more=async()=>{
     if(next===null)return;
