@@ -306,6 +306,8 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
     let source_label=if source=="hook"{"hook"}else{source};
     let Some(native_turn)=turn else{
         event(db,&evidence_id,None,&sid,None,&root_node,time,event_name,event_name,source_label,None)?;
+        db.execute("INSERT INTO changes(workflow_id,project_id,at) VALUES(?1,?2,?3)",
+            params!["",pid,store::now()])?;
         return Ok(());
     };
     let wf=upsert_turn(db,&sid,&native_turn,real_source,&pid,&worktree,branch.as_deref(),v,&evidence_id,time)?;
