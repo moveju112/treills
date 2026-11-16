@@ -18,7 +18,7 @@ pub fn monitor()->Result<()> {
     let _guard=RawGuard::enter()?;
     let backend=CrosstermBackend::new(io::stdout());
     let mut term=Terminal::new(backend)?;
-    let mut sessions=scan::scan();
+    let mut sessions=scan::scan_checked()?;
     let mut selected=0usize;
     loop {
         term.draw(|f|{
@@ -66,8 +66,17 @@ pub fn monitor()->Result<()> {
                 }
             }
         }
-        sessions=scan::scan();
-        if selected>=sessions.len(){selected=sessions.len().saturating_sub(1);}
+        let selected_id=sessions.get(selected).map(|s|format!("{}:{}",s.source,s.id));
+        match scan::scan_checked() {
+            Ok(next)=>{
+                if let Some(id)=selected_id {
+                    selected=next.iter().position(|s|format!("{}:{}",s.source,s.id)==id)
+                        .unwrap_or_else(||selected.min(next.len().saturating_sub(1)));
+                }else{selected=selected.min(next.len().saturating_sub(1));}
+                sessions=next;
+            }
+            Err(err)=>eprintln!("treills: refresh failed (keeping last snapshot): {err:#}"),
+        }
     }
     Ok(())
 }
