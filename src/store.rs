@@ -162,7 +162,10 @@ pub fn workflows(db:&Connection, project_id:Option<&str>,session_id:Option<&str>
        WHERE (?1 IS NULL OR w.project_id=?1)
        AND (?2 IS NULL OR w.session_id=?2)
        AND (?3 IS NULL OR w.turn_id=?3)
-       AND (?4 IS NULL OR w.state=?4)
+       AND (?4 IS NULL OR w.state=?4
+         OR (?4='active' AND w.state IN ('recent','running'))
+         OR (?4='attention' AND w.state IN ('waiting','failed','unknown'))
+         OR (?4='completed' AND w.state IN ('success','failed','cancelled','ended')))
        AND (?5 IS NULL OR instr(lower(w.name),lower(?5))>0)
        ORDER BY COALESCE(w.latest_at,0) DESC,w.id LIMIT ?6 OFFSET ?7");
     let mut stmt=db.prepare(&sql)?;
