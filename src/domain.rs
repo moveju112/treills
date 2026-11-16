@@ -59,7 +59,7 @@ pub struct Project {
     pub active_count: i32,
     pub attention_count: i32,
     pub ended_count: i32,
-    pub latest_at: Option<i64>,
+    #[ts(type = "number | null")]    pub latest_at: Option<i64>,
     pub previews: Vec<Preview>,
 }
 
@@ -74,9 +74,9 @@ pub struct Workflow {
     pub parent_turn_id: Option<String>,
     pub name: String,
     pub state: RunState,
-    pub started_at: Option<i64>,
-    pub ended_at: Option<i64>,
-    pub latest_at: Option<i64>,
+    #[ts(type = "number | null")]    pub started_at: Option<i64>,
+    #[ts(type = "number | null")]    pub ended_at: Option<i64>,
+    #[ts(type = "number | null")]    pub latest_at: Option<i64>,
     pub worktree: String,
     pub branch: Option<String>,
     pub model: Option<String>,
@@ -95,9 +95,9 @@ pub struct AgentNode {
     pub role: String,
     pub model: Option<String>,
     pub state: RunState,
-    pub started_at: Option<i64>,
-    pub ended_at: Option<i64>,
-    pub latest_at: Option<i64>,
+    #[ts(type = "number | null")]    pub started_at: Option<i64>,
+    #[ts(type = "number | null")]    pub ended_at: Option<i64>,
+    #[ts(type = "number | null")]    pub latest_at: Option<i64>,
     pub last_tool: Option<String>,
     pub evidence: Vec<String>,
 }
@@ -119,7 +119,7 @@ pub struct TimelineEvent {
     pub session_id: String,
     pub turn_id: Option<String>,
     pub node_id: String,
-    pub at: Option<i64>,
+    #[ts(type = "number | null")]    pub at: Option<i64>,
     pub kind: String,
     pub detail: String,
     pub evidence_source: String,
@@ -131,16 +131,16 @@ pub struct TimelineEvent {
 pub struct IngestIssue {
     pub path: String,
     pub message: String,
-    pub recorded_at: i64,
+    #[ts(type = "number")]    pub recorded_at: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Change {
-    pub seq: i64,
+    #[ts(type = "number")]    pub seq: i64,
     pub workflow_id: String,
     pub project_id: String,
-    pub at: i64,
+    #[ts(type = "number")]    pub at: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -148,8 +148,8 @@ pub struct Change {
 pub struct ProjectsPage {
     pub api_version: String,
     pub items: Vec<Project>,
-    pub next_offset: Option<i64>,
-    pub last_change_id: i64,
+    #[ts(type = "number | null")]    pub next_offset: Option<i64>,
+    #[ts(type = "number")]    pub last_change_id: i64,
     pub issues: Vec<IngestIssue>,
 }
 
@@ -158,7 +158,7 @@ pub struct ProjectsPage {
 pub struct WorkflowsPage {
     pub api_version: String,
     pub items: Vec<Workflow>,
-    pub next_offset: Option<i64>,
+    #[ts(type = "number | null")]    pub next_offset: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -166,7 +166,7 @@ pub struct WorkflowsPage {
 pub struct EventsPage {
     pub api_version: String,
     pub items: Vec<TimelineEvent>,
-    pub next_cursor: Option<i64>,
+    #[ts(type = "number | null")]    pub next_cursor: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -184,7 +184,7 @@ pub struct WorkflowDetail {
 pub struct ChangesPage {
     pub api_version: String,
     pub items: Vec<Change>,
-    pub next_cursor: i64,
+    #[ts(type = "number")]    pub next_cursor: i64,
     pub has_more: bool,
 }
 
@@ -197,9 +197,9 @@ pub struct SessionRecord {
     pub source: String,
     pub native_id: String,
     pub parent_turn_id: Option<String>,
-    pub started_at: Option<i64>,
-    pub ended_at: Option<i64>,
-    pub latest_at: Option<i64>,
+    #[ts(type = "number | null")]    pub started_at: Option<i64>,
+    #[ts(type = "number | null")]    pub ended_at: Option<i64>,
+    #[ts(type = "number | null")]    pub latest_at: Option<i64>,
     pub state: RunState,
     pub worktree: String,
     pub branch: Option<String>,
@@ -212,7 +212,7 @@ pub struct SessionRecord {
 pub struct SessionsPage {
     pub api_version: String,
     pub items: Vec<SessionRecord>,
-    pub next_offset: Option<i64>,
+    #[ts(type = "number | null")]    pub next_offset: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
