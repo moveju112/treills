@@ -122,6 +122,8 @@ fn state(event:&str,v:&Value,time:Option<i64>)->RunState{
     if let Some(value)=lookup(v,&["/result/status","/payload/result/status","/execution_status"]){
         return match value{
             "success"|"passed"=>RunState::Success,
+            "running"=>RunState::Running,
+            "completed"|"ended"=>RunState::Ended,
             "failure"|"failed"|"error"=>RunState::Failed,
             "cancelled"|"canceled"=>RunState::Cancelled,
             "waiting"=>RunState::Waiting,
