@@ -202,7 +202,10 @@ pub fn projects(db:&Connection,filter:Option<&str>,search:Option<&str>,offset:i6
         if matches!(filter,Some("active")) && active==0 {continue;}
         if matches!(filter,Some("attention")) && attention==0 {continue;}
         if matches!(filter,Some("completed")) && ended==0 {continue;}
-        let latest_at=previews.iter().filter_map(|p|p.1).max();
+        let latest_workflow=previews.iter().filter_map(|p|p.1).max();
+        let latest_session:Option<i64>=db.query_row(
+            "SELECT MAX(latest_at) FROM sessions WHERE project_id=?1",[&id],|r|r.get(0))?;
+        let latest_at=latest_workflow.into_iter().chain(latest_session).max();
         found.push(Project{id,name,root,active_count:active,attention_count:attention,
           ended_count:ended,latest_at,previews:previews.into_iter().map(|p|p.0).collect()});
     }
