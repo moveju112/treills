@@ -203,6 +203,7 @@ fn upsert_session(db:&Connection,source:&str,native:&str,v:&Value,event_id:&str,
          if new_state=="ended"{time}else{None},time,new_state,worktree,branch,proof])?;
     Ok((sid,pid,worktree,branch))
 }
+#[allow(clippy::too_many_arguments)]
 fn upsert_turn(db:&Connection,sid:&str,native_turn:&str,source:&str,pid:&str,worktree:&str,branch:Option<&str>,v:&Value,event_id:&str,time:Option<i64>)->Result<String>{
     let id=turn_id(source,sid,native_turn);
     let prev=db.query_row("SELECT state,latest_at,name,evidence FROM workflows WHERE id=?1",[&id],|r|
@@ -237,6 +238,7 @@ fn upsert_turn(db:&Connection,sid:&str,native_turn:&str,source:&str,pid:&str,wor
        time,worktree,branch,model,proof])?;
     Ok(id)
 }
+#[allow(clippy::too_many_arguments)]
 fn upsert_node(db:&Connection,wf:&str,id:&str,parent:Option<&str>,child_session:Option<&str>,role:&str,model:Option<&str>,
     run_state:RunState,time:Option<i64>,ev:&str,tool:Option<&str>)->Result<()>{
     let previous=db.query_row("SELECT state,latest_at,evidence FROM nodes WHERE id=?1",[id],|r|
@@ -259,6 +261,7 @@ fn upsert_node(db:&Connection,wf:&str,id:&str,parent:Option<&str>,child_session:
            if RunState::from_db(&s).is_terminal(){time}else{None},time,tool,proof])?;
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 fn event(db:&Connection,id:&str,wf:Option<&str>,sid:&str,turn:Option<&str>,node:&str,
     time:Option<i64>,kind:&str,detail:&str,src:&str,call_id:Option<&str>)->Result<()> {
     db.execute("INSERT OR IGNORE INTO events(id,workflow_id,session_id,turn_id,node_id,at,kind,detail,evidence_source,call_id,ingested_at)
@@ -266,6 +269,7 @@ fn event(db:&Connection,id:&str,wf:Option<&str>,sid:&str,turn:Option<&str>,node:
       params![id,wf,sid,turn,node,time,kind,detail,src,call_id,store::now()])?;
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 fn call(db:&Connection,wf:&str,node:&str,id:&str,tool:&str,time:Option<i64>,done:bool,result:Option<&str>)->Result<bool>{
     let previous=db.query_row("SELECT name,finished_at FROM calls WHERE workflow_id=?1 AND node_id=?2 AND call_id=?3",
        params![wf,node,id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<i64>>(1)?))).optional()?;
