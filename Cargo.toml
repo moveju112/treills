@@ -12,6 +12,14 @@ ratatui = "0.29"
 serde_json = "1"
 walkdir = "2"
 dirs = "6"
+axum = "0.7"
+chrono = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time"] }
+tower-http = { version = "0.6", features = ["fs"] }
+ts-rs = "11"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,94 +1,71 @@
-use crate::model::Session;
-use anyhow::Result;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
-use walkdir::WalkDir;
+use crate::{collector::{self, Sources}, domain::RunState, model::Session, store};
+use anyhow::{Context, Result};
+use std::{collections::BTreeMap, fs::File, io::{Read, Seek, SeekFrom}, path::PathBuf, thread, time::Duration};
 
-fn home() -> PathBuf { dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")) }
-pub fn state_dir() -> PathBuf { dirs::state_dir().unwrap_or_else(|| home().join(".local/state")).join("treills") }
-pub fn event_file() -> PathBuf { state_dir().join("events.jsonl") }
-
-fn tail_jsonl(file: &Path, limit_bytes: u64, mut handle: impl FnMut(Value)) -> Result<()> {
-    let mut f=File::open(file)?;
-    let size=f.metadata()?.len();
-    let start=size.saturating_sub(limit_bytes);
-    f.seek(SeekFrom::Start(start))?;
-    let mut reader=BufReader::new(f);
-    if start > 0 { let mut skip=String::new(); reader.read_line(&mut skip)?; }
-    let mut buf=String::new();
-    loop {
-        buf.clear();
-        if reader.read_line(&mut buf)? == 0 { break; }
-        if let Ok(v)=serde_json::from_str::<Value>(buf.trim_end()) { handle(v); }
-    }
-    Ok(())
+pub fn state_dir() -> PathBuf {
+    dirs::state_dir().unwrap_or_else(||dirs::home_dir().unwrap_or_else(||PathBuf::from(".")).join(".local/state")).join("treills")
 }
-fn latest_epoch(file: &Path) -> u64 {
-    fs::metadata(file).ok().and_then(|m| m.modified().ok())
-        .and_then(|v|v.duration_since(UNIX_EPOCH).ok()).map(|d|d.as_secs()).unwrap_or(0)
-}
-fn session_id(file: &Path) -> String {
-    file.file_stem().and_then(|s|s.to_str()).unwrap_or("unknown").to_owned()
-}
-pub fn scan() -> Vec<Session> {
-    let mut sessions:HashMap<String,Session>=HashMap::new();
-    for (source,root) in [
-        ("claude",home().join(".claude/projects")),
-        ("codex",home().join(".codex/sessions"))
-    ] {
-        if !root.exists(){continue;}
-        for entry in WalkDir::new(root).max_depth(7).into_iter().filter_map(|e| e.ok()) {
-            if !entry.file_type().is_file() || entry.path().extension().and_then(|v|v.to_str())!=Some("jsonl") {continue;}
-            let path=entry.path();
-            let name=session_id(path);
-            if source=="claude" && name.starts_with("agent-"){continue;}
-            let id=if source=="codex" {
-                // Codex rollout-... contains an embedded UUID; retain the filename as a stable fallback.
-                name.clone()
-            }else{name.clone()};
-            let key=format!("{source}:{id}");
-            let session=sessions.entry(key).or_insert_with(||Session::new(&id,source));
-            session.file=path.to_path_buf();
-            session.last_epoch=latest_epoch(path);
-            let _=tail_jsonl(path,512*1024,|v|session.apply(&v));
-        }
-    }
-    let file=event_file();
-    if file.exists() {
-        let _=tail_jsonl(&file,2*1024*1024,|v| {
-            let source=v.get("source").and_then(Value::as_str).unwrap_or("hook");
-            let id=v.get("session_id").and_then(Value::as_str).unwrap_or("unknown");
-            let key=format!("{source}:{id}");
-            let session=sessions.entry(key).or_insert_with(||Session::new(id,source));
-            session.last_epoch=session.last_epoch.max(latest_epoch(&file));
-            session.apply(&v);
-        });
-    }
-    let mut out:Vec<_>=sessions.into_values().collect();
-    out.sort_by_key(|a| std::cmp::Reverse(a.last_epoch));
-    out.truncate(100);
-    out
-}
-pub fn read_events(follow: bool) -> Result<()> {
-    let path=event_file();
-    if !path.exists(){anyhow::bail!("no events yet: {}",path.display())}
-    if !follow {
-        let mut s=String::new();File::open(path)?.read_to_string(&mut s)?;print!("{s}");return Ok(());
-    }
-    use std::time::Duration;
+pub fn event_file() -> PathBuf {state_dir().join("events.jsonl")}
+pub fn scan_checked() -> Result<Vec<Session>> {
+    let mut db=store::open()?;
+    collector::refresh(&mut db,&Sources::default()).context("incremental session collection")?;
+    let mut result=Vec::new();
     let mut offset=0;
     loop {
-        let metadata=fs::metadata(&path)?;
-        if metadata.len()<offset {offset=0;}
-        let mut f=File::open(&path)?;
-        f.seek(SeekFrom::Start(offset))?;
-        let mut s=String::new();f.read_to_string(&mut s)?;
+        let page=store::workflows(&db,None,None,None,None,None,offset,100)?;
+        for w in page.items {
+            let mut session=Session::new(&w.session_id,&w.source);
+            session.cwd=w.worktree;
+            session.phase=w.state.as_str().into();
+            session.ended=w.state.is_terminal();
+            session.model=w.model.unwrap_or_default();
+            session.last_epoch=w.latest_at.unwrap_or_default() as u64;
+            let mut stmt=db.prepare("SELECT name,COUNT(*) FROM calls WHERE workflow_id=?1 AND name<>'' GROUP BY name")?;
+            session.tools=stmt.query_map([&w.id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)? as usize)))?
+                .collect::<rusqlite::Result<BTreeMap<_,_>>>()?;
+            let mut stmt=db.prepare("SELECT detail,COUNT(*) FROM events WHERE workflow_id=?1 AND kind IN ('skill_confirmed','skill_candidate') GROUP BY detail")?;
+            session.skills=stmt.query_map([&w.id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)? as usize)))?
+                .collect::<rusqlite::Result<BTreeMap<_,_>>>()?;
+            let mut stmt=db.prepare("SELECT id,role,state FROM nodes WHERE workflow_id=?1 AND role<>'main'")?;
+            for row in stmt.query_map([&w.id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)))? {
+                let (id,role,state)=row?;
+                if !RunState::from_db(&state).is_terminal(){session.agents.insert(id,role);}
+            }
+            let events=store::events(&db,&w.id,None,100)?;
+            for e in events.items.into_iter().rev().take(35).rev() {
+                session.activity.push_back(format!("{} {}",e.kind,e.detail));
+            }
+            result.push(session);
+        }
+        if let Some(next)=page.next_offset{offset=next;}else{break;}
+    }
+    Ok(result)
+}
+pub fn scan() -> Vec<Session> {
+    match scan_checked(){
+        Ok(s)=>s,
+        Err(err)=>{eprintln!("treills: failed to collect sessions: {err:#}");Vec::new()}
+    }
+}
+pub fn read_events(follow:bool)->Result<()> {
+    let path=event_file();
+    if !path.exists(){anyhow::bail!("no events yet: {}",path.display());}
+    if !follow{
+        let mut content=String::new();
+        File::open(&path)?.read_to_string(&mut content)?;
+        print!("{content}");
+        return Ok(());
+    }
+    let mut offset=0;
+    loop{
+        let metadata=std::fs::metadata(&path)?;
+        if metadata.len()<offset{offset=0;}
+        let mut file=File::open(&path)?;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut content=String::new();
+        file.read_to_string(&mut content)?;
         offset=metadata.len();
-        print!("{s}");
-        std::thread::sleep(Duration::from_millis(300));
+        print!("{content}");
+        thread::sleep(Duration::from_millis(300));
     }
 }

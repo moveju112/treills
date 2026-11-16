@@ -1,3 +1,7 @@
+mod collector;
+mod domain;
+mod server;
+mod store;
 mod hooks;
 mod model;
 mod scan;
@@ -8,6 +12,8 @@ use std::process::Command;
 fn usage(){
     println!("treills 0.1.0 -- SSH-friendly Claude Code + Codex activity dashboard");
     println!("  monitor             show read-only dashboard (default)");
+    println!("  serve [--bind IP] [--port N]    run loopback-only web dashboard");
+    println!("  typegen             generate web/src/contracts.generated.ts");
     println!("  sessions            list detected sessions");
     println!("  events [--follow]   print metadata hook log");
     println!("  install [--dry-run] [--with-codex]   add metadata-only hooks");
@@ -47,6 +53,20 @@ fn main()->Result<()>{
     let sub=args.first().map(String::as_str).unwrap_or("monitor");
     match sub {
         "monitor"=>tui::monitor(),
+        "serve"=>{
+            let flag=|name:&str,default:&str|->String{args.iter().position(|a|a==name).and_then(|i|args.get(i+1)).cloned().unwrap_or_else(||default.into())};
+            let bind=flag("--bind","127.0.0.1");
+            let port=flag("--port","47821").parse::<u16>()?;
+            let assets=args.iter().position(|a|a=="--assets").and_then(|i|args.get(i+1)).map(String::as_str);
+            server::serve(&bind,port,assets)
+        },
+        "typegen"=>{
+            let target=std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web/src/contracts.generated.ts");
+            if let Some(parent)=target.parent(){std::fs::create_dir_all(parent)?;}
+            std::fs::write(&target,domain::typescript())?;
+            println!("generated {}",target.display());
+            Ok(())
+        },
         "sessions"=>{
             for s in scan::scan(){println!("{}\t{}\t{}\t{}\t{}",s.source,s.id,s.model,s.phase,s.cwd);}
             Ok(())
