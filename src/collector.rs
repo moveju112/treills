@@ -172,8 +172,11 @@ fn upsert_session(db:&Connection,source:&str,native:&str,v:&Value,event_id:&str,
     let prior=existing.as_ref().map(|x|x.0.as_str()).unwrap_or("unknown");
     let previous_at=existing.as_ref().and_then(|x|x.1);
     let new_state=merge_state(prior,state(ev,v,time),previous_at,time);
-    let parent_turn=lookup(v,&["/parent_turn_id","/payload/parent_turn_id"]).map(str::to_owned)
-        .or_else(||existing.as_ref().and_then(|x|x.4.clone()));
+    let parent_turn=lookup(v,&["/parent_turn_id","/payload/parent_turn_id"]).map(|native_turn|{
+        if let Some(parent_session)=lookup(v,&["/parent_session_id","/payload/parent_session_id"]){
+            turn_id(source,&session_id(source,parent_session),native_turn)
+        }else{native_turn.to_owned()}
+    }).or_else(||existing.as_ref().and_then(|x|x.4.clone()));
     let proof=evidence(existing.as_ref().map(|x|x.3.clone()),event_id);
     db.execute("INSERT INTO sessions(id,project_id,source,native_id,parent_turn_id,started_at,ended_at,latest_at,state,worktree,branch,evidence)
        VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
@@ -199,7 +202,11 @@ fn upsert_turn(db:&Connection,sid:&str,native_turn:&str,source:&str,pid:&str,wor
     let new_state=merge_state(prev.as_ref().map(|x|x.0.as_str()).unwrap_or("unknown"),
       state(event,v,time),prev.as_ref().and_then(|x|x.1),time);
     let proof=evidence(prev.as_ref().map(|x|x.3.clone()),event_id);
-    let parent=lookup(v,&["/parent_turn_id","/payload/parent_turn_id"]).map(str::to_owned);
+    let parent=lookup(v,&["/parent_turn_id","/payload/parent_turn_id"]).map(|native_parent|{
+        let parent_sid=lookup(v,&["/parent_session_id","/payload/parent_session_id"])
+            .map(|n|session_id(source,n)).unwrap_or_else(||sid.to_owned());
+        turn_id(source,&parent_sid,native_parent)
+    });
     let model=lookup(v,&["/message/model","/model","/payload/model"]);
     db.execute("INSERT INTO workflows(id,project_id,source,session_id,turn_id,parent_turn_id,name,state,started_at,ended_at,latest_at,worktree,branch,model,evidence)
        VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
