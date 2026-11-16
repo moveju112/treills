@@ -53,6 +53,7 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
   const [next, setNext] = useState<number|null>(null);
   const [search,setSearch] = useState('');
   const [filter,setFilter] = useState<'all'|'active'|'attention'|'completed'>('all');
+  const [runFilter,setRunFilter] = useState<'all'|'active'|'attention'|'completed'>('all');
   const [connection,setConnection] = useState<'connecting'|'online'|'disconnected'>('connecting');
   const [error,setError] = useState<string|null>(null);
   const [issues,setIssues] = useState<string[]>([]);
@@ -113,12 +114,12 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
           const res=await provider.listSessions({projectId:scopeId,limit:PAGE},controller.signal);
           if(controller.signal.aborted)return;
           setSessions(res.items);setNext(res.next_offset);
-          const projectTurns=await provider.listWorkflows({projectId:scopeId,limit:40},controller.signal);
+          const projectTurns=await provider.listWorkflows({projectId:scopeId,state:runFilter==='all'?undefined:runFilter,limit:40},controller.signal);
           if(controller.signal.aborted)return;
           setProjectExecutions(projectTurns.items);
           setMoreProjectExecutions(projectTurns.next_offset);
         }else if(scopeKind==='session'){
-          const res=await provider.listWorkflows({sessionId:scopeId,search,limit:PAGE},controller.signal);
+          const res=await provider.listWorkflows({sessionId:scopeId,search,state:runFilter==='all'?undefined:runFilter,limit:PAGE},controller.signal);
           if(controller.signal.aborted)return;
           setExecutions(res.items);setNext(res.next_offset);
         }else{
@@ -130,7 +131,7 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
     };
     void q();
     return ()=>controller.abort();
-  },[provider,scopeKind,scopeId,search,filter,revision]);
+  },[provider,scopeKind,scopeId,search,filter,runFilter,revision]);
 
   useEffect(()=>{
     if(scopeKind!=='execution'){setDetail(null);setEvents([]);setEventCursor(0);return;}
@@ -156,7 +157,7 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
         const res=await provider.listSessions({projectId:scopeId,offset:next,limit:PAGE});
         setSessions(old=>[...old,...res.items]);setNext(res.next_offset);
       }else if(scopeKind==='session'){
-        const res=await provider.listWorkflows({sessionId:scopeId,search,offset:next,limit:PAGE});
+        const res=await provider.listWorkflows({sessionId:scopeId,search,state:runFilter==='all'?undefined:runFilter,offset:next,limit:PAGE});
         setExecutions(old=>[...old,...res.items]);setNext(res.next_offset);
       }
     }catch(e){setError(String(e));}
@@ -164,7 +165,7 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
   const moreProjectTurns=async()=>{
     if(scopeKind!=='project'||moreProjectExecutions===null)return;
     try{
-      const page=await provider.listWorkflows({projectId:scopeId,offset:moreProjectExecutions,limit:40});
+      const page=await provider.listWorkflows({projectId:scopeId,state:runFilter==='all'?undefined:runFilter,offset:moreProjectExecutions,limit:40});
       setProjectExecutions(old=>[...old,...page.items]);
       setMoreProjectExecutions(page.next_offset);
     }catch(e){setError(String(e));}
@@ -201,6 +202,11 @@ export function ActivityView({ provider, scope, onScopeChange, selectedNodeId, o
       {(['all','active','attention','completed'] as const).map(f=>
         <button type="button" aria-pressed={filter===f} key={f} onClick={()=>setFilter(f)}>
           {{all:'전체',active:'최근 활동',attention:'확인 필요',completed:'종료 기록'}[f]}
+        </button>)}</div>}
+    {(scopeKind==='project'||scopeKind==='session')&&<div className={styles.filters} role="group" aria-label="실행 상태 필터">
+      {(['all','active','attention','completed'] as const).map(f=>
+        <button type="button" aria-pressed={runFilter===f} key={f} onClick={()=>setRunFilter(f)}>
+          {{all:'전체 실행',active:'활동 중',attention:'확인 필요',completed:'종료 기록'}[f]}
         </button>)}</div>}
     {scopeKind==='all'&&<div className={styles.scopeGrid}>
       {projects.filter(filterProject).map(p=><button type="button" className={styles.projectCard} key={p.id}
