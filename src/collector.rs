@@ -30,7 +30,7 @@ fn lookup<'a>(v:&'a Value,paths:&[&str])->Option<&'a str>{
     paths.iter().find_map(|p|v.pointer(p).and_then(Value::as_str)).filter(|v|!v.is_empty())
 }
 fn at(v:&Value)->Option<i64>{
-    for path in ["/ts_unix","/timestamp","/ts","/payload/timestamp","/payload/ts","/payload/created_at"]{
+    for path in ["/timestamp","/ts","/payload/timestamp","/payload/ts","/payload/created_at","/ts_unix"]{
         let Some(val)=v.pointer(path) else {continue;};
         if let Some(n)=val.as_i64(){return Some(if n>100_000_000_000{n/1000}else{n});}
         if let Some(s)=val.as_str(){
