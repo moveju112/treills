@@ -79,6 +79,16 @@ impl Session {
                             if ty == "tool_use" {
                                 let name = item.get("name").and_then(Value::as_str).unwrap_or("");
                                 self.tool(name);
+                                if name == "Read" {
+                                    if let Some(path) = item.pointer("/input/file_path").and_then(Value::as_str) {
+                                        let p = std::path::Path::new(path);
+                                        if p.file_name().and_then(|x|x.to_str()) == Some("SKILL.md") {
+                                            if let Some(skill) = p.parent().and_then(|x|x.file_name()).and_then(|x|x.to_str()) {
+                                                self.skill(skill, false);
+                                            }
+                                        }
+                                    }
+                                }
                                 if name == "Skill" {
                                     if let Some(skill) = item.pointer("/input/skill").and_then(Value::as_str) { self.skill(skill,true); }
                                 }
