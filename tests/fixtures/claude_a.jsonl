@@ -1,0 +1,5 @@
+{"type":"user","uuid":"turn-a1","cwd":"__ALPHA__","timestamp":"2026-11-16T15:30:00Z","message":{"content":"DO_NOT_STORE_PROMPT_A"}}
+{"type":"assistant","uuid":"msg-a1","cwd":"__ALPHA__","timestamp":"2026-11-16T15:30:01Z","message":{"model":"claude-sonnet-5","content":[{"type":"tool_use","id":"tool-edit","name":"Edit","input":{"file_path":"/secret/DO_NOT_STORE_TOOL_ARGUMENT"}},{"type":"tool_use","id":"tool-review","name":"Agent","input":{"subagent_type":"reviewer","description":"DO_NOT_STORE_DESCRIPTION"}}]}}
+{"type":"user","uuid":"turn-a1-result","cwd":"__ALPHA__","timestamp":"2026-11-16T15:30:02Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool-edit","is_error":false,"content":"DO_NOT_STORE_TOOL_OUTPUT"}]}}
+{"type":"user","uuid":"turn-a2","cwd":"__ALPHA__","timestamp":"2026-11-16T15:31:00Z","message":{"content":"DO_NOT_STORE_PROMPT_B"}}
+{"type":"assistant","uuid":"msg-a2","cwd":"__ALPHA__","timestamp":"2026-11-16T15:31:01Z","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"tool-test","name":"Bash","input":{"command":"DO_NOT_STORE_COMMAND"}}]}}

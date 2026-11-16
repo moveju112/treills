@@ -1,0 +1,2 @@
+{"type":"user","uuid":"turn-b1","cwd":"__ALPHA__","timestamp":"2026-11-16T15:29:00Z","message":{"content":"second session"}}
+{"type":"assistant","uuid":"msg-b1","cwd":"__ALPHA__","timestamp":"2026-11-16T15:29:01Z","message":{"model":"claude-haiku-5","content":[{"type":"tool_use","id":"tool-b","name":"Read","input":{"file_path":"/tmp/foo"}}]}}

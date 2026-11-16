@@ -1,0 +1,9 @@
+{"source":"claude","session_id":"sess-a","turn_id":"turn-a1","cwd":"__ALPHA__","event":"SubagentStart","agent_id":"agent-1","agent_type":"reviewer","parent_agent_id":"main","child_session_id":"child-1","ts":"2026-11-16T15:30:03Z"}
+{"source":"claude","session_id":"sess-a","turn_id":"turn-a1","cwd":"__ALPHA__","event":"SubagentStart","agent_id":"agent-2","agent_type":"explorer","parent_agent_id":"agent-1","child_session_id":"child-2","ts":"2026-11-16T15:30:04Z"}
+{"source":"claude","session_id":"child-1","parent_session_id":"sess-a","parent_turn_id":"turn-a1","cwd":"__ALPHA__","event":"SessionStart","ts":"2026-11-16T15:30:05Z"}
+{"source":"claude","session_id":"child-2","parent_session_id":"child-1","parent_turn_id":"turn-child-1","cwd":"__ALPHA__","event":"SessionStart","ts":"2026-11-16T15:30:06Z"}
+{"source":"claude","session_id":"sess-a","turn_id":"turn-a1","cwd":"__ALPHA__","event":"SubagentStop","agent_id":"agent-2","parent_agent_id":"agent-1","ts":"2026-11-16T15:30:08Z"}
+{"source":"claude","session_id":"sess-a","turn_id":"turn-a1","cwd":"__ALPHA__","event":"SubagentStop","agent_id":"agent-1","parent_agent_id":"main","ts":"2026-11-16T15:30:09Z"}
+{"source":"claude","session_id":"sess-a","turn_id":"turn-a2","cwd":"__ALPHA__","event":"turn_outcome","execution_status":"success","ts":"2026-11-16T15:31:05Z"}
+{"source":"claude","session_id":"sess-b","turn_id":"turn-b1","cwd":"__ALPHA__","event":"turn_outcome","execution_status":"failed","ts":"2026-11-16T15:29:08Z"}
+{"source":"codex","session_id":"550e8400-e29b-41d4-a716-446655440000","turn_id":"turn-c1","cwd":"__BETA__","event":"turn_outcome","execution_status":"cancelled","ts":"2026-11-16T15:01:00Z"}

@@ -1,0 +1,2 @@
+{"type":"user","uuid":"turn-child-1","cwd":"__ALPHA__","timestamp":"2026-11-16T15:30:05Z","message":{"content":"child turn"}}
+{"type":"assistant","uuid":"child-result","cwd":"__ALPHA__","timestamp":"2026-11-16T15:30:06Z","message":{"model":"claude-sonnet-5","content":[{"type":"tool_use","id":"read-child","name":"Read","input":{"file_path":"/tmp/example"}}]}}
