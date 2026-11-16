@@ -288,7 +288,13 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
     let real_source=if source=="hook"{lookup(v,&["/source"]).unwrap_or("unknown")}else{source};
     let Some(native)=native_session(file,source,v) else{return Ok(())};
     if native=="unknown"{return Ok(());}
-    let evidence_id=format!("e:{}", &digest(format!("{}:{generation}:{offset}",file.display()))[..32]);
+    let native_event_id=lookup(v,&["/uuid","/event_id","/hook_event_id","/payload/event_id"]);
+    let identity=if let Some(native_id)=native_event_id {
+        format!("{source}:{}:{native_id}",file.display())
+    }else{
+        format!("{}:{generation}:{offset}",file.display())
+    };
+    let evidence_id=format!("e:{}", &digest(identity.as_bytes())[..32]);
     let time=at(v);
     let (sid,pid,worktree,branch)=upsert_session(db,real_source,&native,v,&evidence_id,time)?;
     let event_name=lookup(v,&["/event","/ev","/payload/type","/type"]).unwrap_or("unknown");
