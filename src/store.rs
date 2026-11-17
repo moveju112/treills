@@ -207,7 +207,7 @@ pub fn projects(db:&Connection,filter:Option<&str>,search:Option<&str>,offset:i6
          OR (?2='attention' AND COALESCE(c.attention_count,0)>0)
          OR (?2='completed' AND COALESCE(c.ended_count,0)>0)
       )
-      ORDER BY COALESCE(latest_at,0) DESC,p.id
+      ORDER BY 7 DESC,p.id
       LIMIT ?3 OFFSET ?4";
     let mut stmt=db.prepare(sql)?;
     let mut rows=stmt.query_map(params![search,filter,limit+1,offset],|r|{
