@@ -267,9 +267,15 @@ pub fn changes(db:&Connection,after:i64,limit:i64)->Result<ChangesPage>{
     Ok(ChangesPage{api_version:API_VERSION.into(),items:rows,next_cursor,has_more})
 }
 pub fn issue(db:&Connection,path:&str,msg:&str)->Result<()>{
-    db.execute("INSERT INTO issues(path,message,recorded_at) VALUES (?1,?2,?3)
-      ON CONFLICT(path) DO UPDATE SET message=excluded.message,recorded_at=excluded.recorded_at",
+    let changed=db.execute("INSERT INTO issues(path,message,recorded_at) VALUES (?1,?2,?3)
+      ON CONFLICT(path) DO UPDATE SET message=excluded.message,recorded_at=excluded.recorded_at
+      WHERE issues.message<>excluded.message",
       params![path,msg,now()])?;
+    // A collection error may be the only new information. Notify all-scopes
+    // subscribers without making up a project or workflow identity.
+    if changed>0 {
+        db.execute("INSERT INTO changes(workflow_id,project_id,at) VALUES ('','',?1)",[now()])?;
+    }
     Ok(())
 }
 #[cfg(test)]
