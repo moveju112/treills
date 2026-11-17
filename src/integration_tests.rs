@@ -232,3 +232,29 @@ fn short_file_growth_does_not_flag_a_false_rotation() {
     let result=collector::refresh(&mut db,&sources).unwrap();
     assert_eq!(result.issues,0,"file append must not be flagged as rotation");
 }
+
+#[test]
+fn expiration_publishes_changes_for_sessions_and_agents_without_new_source_lines() {
+    let setup=Setup::new();
+    let mut db=setup.db();
+    collector::refresh(&mut db,&setup.sources).unwrap();
+    let wf=id(&db,"turn-a1");
+    let before=store::last_seq(&db).unwrap();
+    let session="s:claude:sess-a";
+    // Simulate old activity without modifying any original transcript.
+    db.execute("UPDATE sessions SET state='recent',latest_at=1 WHERE id=?1",[session]).unwrap();
+    db.execute("UPDATE nodes SET state='recent',latest_at=1 WHERE workflow_id=?1",[&wf]).unwrap();
+    db.execute("UPDATE workflows SET state='recent',latest_at=1 WHERE id=?1",[&wf]).unwrap();
+    collector::refresh(&mut db,&setup.sources).unwrap();
+    let session_state:String=db.query_row("SELECT state FROM sessions WHERE id=?1",[session],|r|r.get(0)).unwrap();
+    assert_eq!(session_state,"inactive");
+    let node_count:i64=db.query_row("SELECT COUNT(*) FROM nodes WHERE workflow_id=?1 AND state='inactive'",
+        [&wf],|r|r.get(0)).unwrap();
+    assert!(node_count>0);
+    let updates=store::changes(&db,before,100).unwrap();
+    assert!(updates.items.iter().any(|c|c.workflow_id==wf));
+    assert!(updates.items.iter().any(|c|c.workflow_id.is_empty()));
+    let after=store::last_seq(&db).unwrap();
+    collector::refresh(&mut db,&setup.sources).unwrap();
+    assert_eq!(store::last_seq(&db).unwrap(),after,"expiry must not create repeated notifications");
+}
