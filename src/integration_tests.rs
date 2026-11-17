@@ -294,3 +294,19 @@ fn project_pagination_and_status_filter_are_applied_in_sqlite() {
     assert!(completed.items.iter().all(|p|p.ended_count==1));
     assert_eq!(store::projects(&db,None,Some("task 11"),0,100).unwrap().items.len(),11);
 }
+
+#[test]
+fn new_collection_issue_notifies_once_without_repeating_on_poll() {
+    let d=tempfile::tempdir().unwrap();
+    let db=store::open_at(&d.path().join("issues.sqlite")).unwrap();
+    assert_eq!(store::last_seq(&db).unwrap(),0);
+    store::issue(&db,"/invalid/file","parse error").unwrap();
+    let after=store::last_seq(&db).unwrap();
+    assert_eq!(after,1);
+    store::issue(&db,"/invalid/file","parse error").unwrap();
+    assert_eq!(store::last_seq(&db).unwrap(),after);
+    store::issue(&db,"/invalid/file","read error").unwrap();
+    assert_eq!(store::last_seq(&db).unwrap(),after+1);
+    let page=store::changes(&db,0,10).unwrap();
+    assert!(page.items.iter().all(|c|c.project_id.is_empty() && c.workflow_id.is_empty()));
+}
