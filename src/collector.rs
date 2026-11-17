@@ -464,7 +464,7 @@ fn scan_file(db:&mut Connection,file:&Path,source:&str,report:&mut Report)->Resu
     let mut offset=previous.as_ref().map(|p|p.2 as u64).unwrap_or(0);
     let mut turn=previous.as_ref().and_then(|p|p.4.clone());
     if let Some((old_id,old_prefix,_,_,_))=previous.as_ref(){
-        if old_id!=&identity || old_prefix!=&prefix || size<offset {
+        if old_id!=&identity || (offset>=64 && old_prefix!=&prefix) || size<offset {
             generation+=1;offset=0;turn=None;
             flag_incomplete(db,file,source)?;
             store::issue(db,&path,"Source replaced or truncated; prior history retained, new generation started")?;
