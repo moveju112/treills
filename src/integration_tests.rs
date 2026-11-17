@@ -258,3 +258,39 @@ fn expiration_publishes_changes_for_sessions_and_agents_without_new_source_lines
     collector::refresh(&mut db,&setup.sources).unwrap();
     assert_eq!(store::last_seq(&db).unwrap(),after,"expiry must not create repeated notifications");
 }
+
+#[test]
+fn project_pagination_and_status_filter_are_applied_in_sqlite() {
+    let d=tempfile::tempdir().unwrap();
+    let db=store::open_at(&d.path().join("paged.sqlite")).unwrap();
+    for n in 0..120 {
+        let pid=format!("project-{n:03}");
+        db.execute("INSERT INTO projects(id,name,root) VALUES(?1,?2,?3)",
+            rusqlite::params![pid,pid,format!("/repo/{pid}")]).unwrap();
+        let wf=format!("wf-{n}");
+        let state=if n%2==0{"recent"}else{"failed"};
+        db.execute("INSERT INTO workflows(id,project_id,source,session_id,turn_id,name,state,latest_at)
+            VALUES(?1,?2,'claude',?3,?4,?5,?6,?7)",
+            rusqlite::params![wf,pid,format!("s-{n}"),format!("turn-{n}"),
+                format!("task {n}"),state,n as i64]).unwrap();
+    }
+    let first=store::projects(&db,None,None,0,40).unwrap();
+    let second=store::projects(&db,None,None,40,40).unwrap();
+    let third=store::projects(&db,None,None,80,40).unwrap();
+    assert_eq!(first.items.len(),40);
+    assert_eq!(second.items.len(),40);
+    assert_eq!(third.items.len(),40);
+    assert_eq!(first.next_offset,Some(40));
+    assert_eq!(third.next_offset,None);
+    let mut ids=std::collections::HashSet::new();
+    for p in first.items.iter().chain(second.items.iter()).chain(third.items.iter()) {
+        assert!(ids.insert(&p.id),"duplicated project between pages");
+    }
+    let attention=store::projects(&db,Some("attention"),None,0,100).unwrap();
+    let completed=store::projects(&db,Some("completed"),None,0,100).unwrap();
+    assert_eq!(attention.items.len(),60);
+    assert_eq!(completed.items.len(),60);
+    assert!(attention.items.iter().all(|p|p.attention_count==1 && p.ended_count==1));
+    assert!(completed.items.iter().all(|p|p.ended_count==1));
+    assert_eq!(store::projects(&db,None,Some("task 11"),0,100).unwrap().items.len(),11);
+}
