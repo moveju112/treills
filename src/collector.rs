@@ -57,7 +57,15 @@ fn native_session(file:&Path,source:&str,v:&Value)->Option<String>{
     }
     let stem=file.file_stem().and_then(|s|s.to_str())?;
     if source=="claude" && stem.starts_with("agent-") {
-        return file.parent()?.parent()?.file_name()?.to_str().map(str::to_owned);
+        if let Some(id)=lookup(v,&["/session_id","/sessionId","/parent_session_id","/parentSessionId"]) {
+            return Some(id.to_owned());
+        }
+        // Only the documented nested path provides evidence of the parent session.
+        // An adjacent agent-*.jsonl file must not be assigned the project directory as a session.
+        if file.parent()?.file_name()?.to_str()==Some("subagents") {
+            return file.parent()?.parent()?.file_name()?.to_str().map(str::to_owned);
+        }
+        return Some(format!("orphan-agent:{}", &digest(file.to_string_lossy().as_bytes())[..24]));
     }
     if source=="codex" {
         if let Some(id)=lookup(v,&["/payload/id","/session_id"]) {
@@ -292,7 +300,7 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
     if native=="unknown"{return Ok(());}
     let native_event_id=lookup(v,&["/uuid","/event_id","/hook_event_id","/payload/event_id"]);
     let identity=if let Some(native_id)=native_event_id {
-        format!("{source}:{}:{native_id}",file.display())
+        format!("{real_source}:{native}:{native_id}")
     }else{
         format!("{}:{generation}:{offset}",file.display())
     };
@@ -301,7 +309,14 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
     let (sid,pid,worktree,branch)=upsert_session(db,real_source,&native,v,&evidence_id,time)?;
     let event_name=lookup(v,&["/event","/ev","/payload/type","/type"]).unwrap_or("unknown");
     let explicit_turn=lookup(v,&["/turn_id","/payload/turn_id"]).map(str::to_owned);
-    let start=native_turn_start(v,source,offset,file);
+    let mut start=native_turn_start(v,source,offset,file);
+    // Codex can emit both task_started and user_message for the same turn.
+    // Without a distinct explicit ID, the second marker is not a new execution.
+    if source=="codex" && current_turn.is_some() &&
+        (event_name=="task_started" || event_name=="user_message") &&
+        (explicit_turn.is_none() || explicit_turn.as_ref()==current_turn.as_ref()) {
+        start=None;
+    }
     if let Some(turn)=start{*current_turn=Some(turn);}
     let turn=if source=="hook"{explicit_turn}else{explicit_turn.or_else(||current_turn.clone())};
     let root_node=format!("{sid}:main");
@@ -422,6 +437,9 @@ fn process(db:&Connection,file:&Path,source:&str,generation:i64,offset:u64,
     }
     db.execute("INSERT INTO changes(workflow_id,project_id,at) VALUES(?1,?2,?3)",
         params![wf,pid,store::now()])?;
+    if source=="codex" && event_name=="task_complete" {
+        *current_turn=None;
+    }
     Ok(())
 }
 fn flag_incomplete(db:&Connection,file:&Path,source:&str)->Result<()> {
