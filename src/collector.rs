@@ -538,6 +538,21 @@ pub fn refresh(db:&mut Connection,sources:&Sources)->Result<Report>{
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn agent_files_do_not_become_project_named_sessions(){
+        let file=Path::new("/home/user/.claude/projects/my-project/agent-123.jsonl");
+        let v=serde_json::json!({});
+        let sid=native_session(file,"claude",&v).unwrap();
+        assert!(sid.starts_with("orphan-agent:"),"{sid}");
+        let nested=Path::new("/home/user/.claude/projects/my-project/session-abc/subagents/agent-123.jsonl");
+        assert_eq!(native_session(nested,"claude",&v).as_deref(),Some("session-abc"));
+        let explicit=serde_json::json!({"sessionId":"real-parent"});
+        assert_eq!(native_session(file,"claude",&explicit).as_deref(),Some("real-parent"));
+    }
+    #[test] fn same_native_event_id_has_same_identity_across_sources(){
+        let id1=format!("claude:{}:{}", "session-1", "event-a");
+        let id2=format!("claude:{}:{}", "session-1", "event-a");
+        assert_eq!(digest(id1),digest(id2));
+    }
     #[test] fn scopes_native_ids(){
         assert_ne!(session_id("codex","abc"),session_id("claude","abc"));
         assert_ne!(turn_id("codex","abc","1"),turn_id("claude","abc","1"));
