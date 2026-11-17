@@ -506,6 +506,28 @@ fn scan_file(db:&mut Connection,file:&Path,source:&str,report:&mut Report)->Resu
     report.files+=1;
     Ok(())
 }
+// Expiry is a state transition even when no new JSONL line arrives.
+ // Record it in the durable change feed so connected browsers repaint.
+fn expire_recent(db:&mut Connection,threshold:i64)->Result<()> {
+    let tx=db.transaction()?;
+    let expired={
+        let mut stmt=tx.prepare(
+            "SELECT id,project_id FROM workflows WHERE state='recent' AND latest_at<?1"
+        )?;
+        stmt.query_map([threshold],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute("UPDATE workflows SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
+    tx.execute("UPDATE sessions SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
+    tx.execute("UPDATE nodes SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
+    for (workflow_id,project_id) in expired {
+        tx.execute("INSERT INTO changes(workflow_id,project_id,at) VALUES(?1,?2,?3)",
+            params![workflow_id,project_id,store::now()])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn refresh(db:&mut Connection,sources:&Sources)->Result<Report>{
     let mut report=Report::default();
     for (source,root) in [("claude",&sources.claude),("codex",&sources.codex)]{
@@ -527,10 +549,7 @@ pub fn refresh(db:&mut Connection,sources:&Sources)->Result<Report>{
             report.issues+=1;
         }
     }
-    let threshold=store::now()-120;
-    db.execute("UPDATE workflows SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
-    db.execute("UPDATE sessions SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
-    db.execute("UPDATE nodes SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
+    expire_recent(db,store::now()-120)?;
     db.execute("DELETE FROM projects WHERE NOT EXISTS(SELECT 1 FROM sessions WHERE sessions.project_id=projects.id)
          AND NOT EXISTS(SELECT 1 FROM workflows WHERE workflows.project_id=projects.id)",[])?;
     Ok(report)
