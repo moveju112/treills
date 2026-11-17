@@ -509,18 +509,41 @@ fn scan_file(db:&mut Connection,file:&Path,source:&str,report:&mut Report)->Resu
 // Expiry is a state transition even when no new JSONL line arrives.
  // Record it in the durable change feed so connected browsers repaint.
 fn expire_recent(db:&mut Connection,threshold:i64)->Result<()> {
+    use std::collections::BTreeSet;
     let tx=db.transaction()?;
-    let expired={
+    // A session can be active before the first identifiable turn. A subagent
+    // can also go idle while its parent execution remains recent.
+    let mut changes=BTreeSet::<(String,String)>::new();
+    {
         let mut stmt=tx.prepare(
             "SELECT id,project_id FROM workflows WHERE state='recent' AND latest_at<?1"
         )?;
-        stmt.query_map([threshold],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-    };
+        for row in stmt.query_map([threshold],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))? {
+            changes.insert(row?);
+        }
+    }
+    {
+        let mut stmt=tx.prepare(
+            "SELECT project_id FROM sessions WHERE state='recent' AND latest_at<?1"
+        )?;
+        for row in stmt.query_map([threshold],|r|r.get::<_,String>(0))? {
+            changes.insert((String::new(),row?));
+        }
+    }
+    {
+        let mut stmt=tx.prepare(
+            "SELECT DISTINCT n.workflow_id,w.project_id FROM nodes n
+              JOIN workflows w ON w.id=n.workflow_id
+              WHERE n.state='recent' AND n.latest_at<?1"
+        )?;
+        for row in stmt.query_map([threshold],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))? {
+            changes.insert(row?);
+        }
+    }
     tx.execute("UPDATE workflows SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
     tx.execute("UPDATE sessions SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
     tx.execute("UPDATE nodes SET state='inactive' WHERE state='recent' AND latest_at<?1",[threshold])?;
-    for (workflow_id,project_id) in expired {
+    for (workflow_id,project_id) in changes {
         tx.execute("INSERT INTO changes(workflow_id,project_id,at) VALUES(?1,?2,?3)",
             params![workflow_id,project_id,store::now()])?;
     }
