@@ -177,45 +177,62 @@ pub fn workflows(db:&Connection, project_id:Option<&str>,session_id:Option<&str>
         next_offset:more.then_some(offset.max(0)+limit)})
 }
 pub fn projects(db:&Connection,filter:Option<&str>,search:Option<&str>,offset:i64,limit:i64)->Result<ProjectsPage>{
+    // Aggregate once, then page at the database layer. The previous version
+    // scanned every project and every execution even when requesting page one.
     let limit=limit.clamp(1,100);
-    let sql="SELECT id,name,root FROM projects
-      WHERE (?1 IS NULL OR instr(lower(name),lower(?1))>0 OR EXISTS
-        (SELECT 1 FROM workflows w WHERE w.project_id=projects.id AND instr(lower(w.name),lower(?1))>0))
-      ORDER BY COALESCE((SELECT MAX(latest_at) FROM workflows w WHERE w.project_id=projects.id),0) DESC,id";
+    let offset=offset.max(0);
+    let sql="WITH counts AS (
+        SELECT project_id,
+          SUM(CASE WHEN state IN ('recent','running') THEN 1 ELSE 0 END) AS active_count,
+          SUM(CASE WHEN state IN ('waiting','failed','unknown') THEN 1 ELSE 0 END) AS attention_count,
+          SUM(CASE WHEN state IN ('ended','success','failed','cancelled') THEN 1 ELSE 0 END) AS ended_count,
+          MAX(latest_at) AS latest_at
+        FROM workflows GROUP BY project_id
+      ), session_latest AS (
+        SELECT project_id,MAX(latest_at) AS latest_at FROM sessions GROUP BY project_id
+      )
+      SELECT p.id,p.name,p.root,
+        COALESCE(c.active_count,0),COALESCE(c.attention_count,0),COALESCE(c.ended_count,0),
+        NULLIF(MAX(COALESCE(c.latest_at,0),COALESCE(sl.latest_at,0)),0) AS latest_at
+      FROM projects p
+      LEFT JOIN counts c ON c.project_id=p.id
+      LEFT JOIN session_latest sl ON sl.project_id=p.id
+      WHERE (?1 IS NULL OR instr(lower(p.name),lower(?1))>0 OR EXISTS (
+         SELECT 1 FROM workflows w
+         WHERE w.project_id=p.id AND instr(lower(w.name),lower(?1))>0
+      ))
+      AND (
+         ?2 IS NULL OR ?2='all'
+         OR (?2='active' AND COALESCE(c.active_count,0)>0)
+         OR (?2='attention' AND COALESCE(c.attention_count,0)>0)
+         OR (?2='completed' AND COALESCE(c.ended_count,0)>0)
+      )
+      ORDER BY COALESCE(latest_at,0) DESC,p.id
+      LIMIT ?3 OFFSET ?4";
     let mut stmt=db.prepare(sql)?;
-    let all=stmt.query_map(params![search],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut found=Vec::new();
-    for (id,name,root) in all {
-        let mut q=db.prepare("SELECT id,name,state,(SELECT COUNT(*) FROM nodes WHERE workflow_id=w.id),latest_at FROM workflows w WHERE project_id=?1 ORDER BY COALESCE(latest_at,0) DESC LIMIT 5")?;
-        let previews=q.query_map([&id],|r| {
+    let mut rows=stmt.query_map(params![search,filter,limit+1,offset],|r|{
+        Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,
+            r.get::<_,i64>(3)? as i32,r.get::<_,i64>(4)? as i32,
+            r.get::<_,i64>(5)? as i32,r.get::<_,Option<i64>>(6)?))
+    })?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let more=rows.len() as i64>limit;
+    if more{rows.pop();}
+    let mut items=Vec::with_capacity(rows.len());
+    let mut previews_stmt=db.prepare(
+        "SELECT id,name,state,
+          (SELECT COUNT(*) FROM nodes WHERE workflow_id=w.id)
+         FROM workflows w WHERE project_id=?1
+         ORDER BY COALESCE(latest_at,0) DESC,id LIMIT 5"
+    )?;
+    for (id,name,root,active_count,attention_count,ended_count,latest_at) in rows {
+        let previews=previews_stmt.query_map([&id],|r|{
             let state:String=r.get(2)?;
-            Ok((Preview{workflow_id:r.get(0)?,name:r.get(1)?,state:RunState::from_db(&state),node_count:r.get(3)?},r.get::<_,Option<i64>>(4)?))
+            Ok(Preview{workflow_id:r.get(0)?,name:r.get(1)?,
+                state:RunState::from_db(&state),node_count:r.get(3)?})
         })?.collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut active=0;let mut attention=0;let mut ended=0;
-        let mut all_states=db.prepare("SELECT state FROM workflows WHERE project_id=?1")?;
-        for state in all_states.query_map([&id],|r|r.get::<_,String>(0))? {
-            match RunState::from_db(&state?) {
-                RunState::Recent|RunState::Running=>active+=1,
-                RunState::Waiting|RunState::Failed|RunState::Unknown=>attention+=1,
-                x if x.is_terminal()=>ended+=1,
-                _=>{}
-            }
-        }
-        if matches!(filter,Some("active")) && active==0 {continue;}
-        if matches!(filter,Some("attention")) && attention==0 {continue;}
-        if matches!(filter,Some("completed")) && ended==0 {continue;}
-        let latest_workflow=previews.iter().filter_map(|p|p.1).max();
-        let latest_session:Option<i64>=db.query_row(
-            "SELECT MAX(latest_at) FROM sessions WHERE project_id=?1",[&id],|r|r.get(0))?;
-        let latest_at=latest_workflow.into_iter().chain(latest_session).max();
-        found.push(Project{id,name,root,active_count:active,attention_count:attention,
-          ended_count:ended,latest_at,previews:previews.into_iter().map(|p|p.0).collect()});
+        items.push(Project{id,name,root,active_count,attention_count,ended_count,latest_at,previews});
     }
-    let count=found.len();
-    let start=offset.max(0) as usize;
-    let items=found.into_iter().skip(start).take(limit as usize).collect();
-    let next_offset=(start+(limit as usize)<count).then_some(offset.max(0)+limit);
+    let next_offset=more.then_some(offset+limit);
     let mut stmt=db.prepare("SELECT path,message,recorded_at FROM issues ORDER BY recorded_at DESC LIMIT 15")?;
     let issues=stmt.query_map([],|r|Ok(IngestIssue{path:r.get(0)?,message:r.get(1)?,recorded_at:r.get(2)?}))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
