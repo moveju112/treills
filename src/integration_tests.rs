@@ -196,3 +196,39 @@ fn http_api_filters_before_delivery_and_preserves_execution_identity() {
     let (status,_)=get("/api/v1/changes?after=invalid");
     assert_eq!(status,StatusCode::BAD_REQUEST);
 }
+
+#[test]
+fn codex_task_started_and_user_message_do_not_fabricate_two_turns() {
+    let d=tempfile::tempdir().unwrap();
+    let codex=d.path().join("codex/rollout-2026-11-17-550e8400-e29b-41d4-a716-446655440000.jsonl");
+    fs::create_dir_all(codex.parent().unwrap()).unwrap();
+    let records=[
+        serde_json::json!({"type":"event_msg","timestamp":"2026-11-17T01:00:00Z","payload":{"type":"task_started"}}),
+        serde_json::json!({"type":"event_msg","timestamp":"2026-11-17T01:00:01Z","payload":{"type":"user_message","message":"DO_NOT_PERSIST"}}),
+        serde_json::json!({"type":"response_item","timestamp":"2026-11-17T01:00:02Z","payload":{"type":"function_call","name":"exec_command","call_id":"call-one"}}),
+        serde_json::json!({"type":"event_msg","timestamp":"2026-11-17T01:00:03Z","payload":{"type":"task_complete"}}),
+        serde_json::json!({"type":"event_msg","timestamp":"2026-11-17T01:01:00Z","payload":{"type":"task_started"}}),
+        serde_json::json!({"type":"event_msg","timestamp":"2026-11-17T01:01:01Z","payload":{"type":"user_message","message":"DO_NOT_PERSIST_TWO"}}),
+    ];
+    fs::write(&codex,records.iter().map(|v|v.to_string()).collect::<Vec<_>>().join("\n")+"\n").unwrap();
+    let sources=Sources{claude:d.path().join("claude"),codex:d.path().join("codex"),hooks:d.path().join("none")};
+    let mut db=store::open_at(&d.path().join("history.sqlite")).unwrap();
+    collector::refresh(&mut db,&sources).unwrap();
+    let session="s:codex:550e8400-e29b-41d4-a716-446655440000";
+    let turns=store::workflows(&db,None,Some(session),None,None,None,0,10).unwrap();
+    assert_eq!(turns.items.len(),2,"each task must have exactly one turn");
+}
+#[test]
+fn short_file_growth_does_not_flag_a_false_rotation() {
+    let d=tempfile::tempdir().unwrap();
+    let file=d.path().join("claude/example.jsonl");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file,"{}\n").unwrap();
+    let sources=Sources{claude:d.path().join("claude"),codex:d.path().join("codex"),hooks:d.path().join("none")};
+    let mut db=store::open_at(&d.path().join("history.sqlite")).unwrap();
+    collector::refresh(&mut db,&sources).unwrap();
+    fs::OpenOptions::new().append(true).open(&file).unwrap()
+        .write_all(b"{\"type\":\"user\",\"uuid\":\"new-turn\",\"timestamp\":\"2026-11-17T00:00:00Z\",\"message\":{\"content\":\"a\"}}\n").unwrap();
+    let result=collector::refresh(&mut db,&sources).unwrap();
+    assert_eq!(result.issues,0,"file append must not be flagged as rotation");
+}
